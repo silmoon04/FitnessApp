@@ -1,22 +1,39 @@
+# Standard library imports
 import copy
 import json
 import logging
-import mysql.connector
-import numpy as np
+import math
 import os
+import random
 import re
-import requests
-from datetime import timedelta, datetime
-from exercises import exercises
+import threading
+import uuid
+from datetime import datetime, timedelta
 from functools import partial
+
+# Third-party imports
+import bcrypt
+import mysql.connector
+from mysql.connector import pooling
+import numpy as np
+import requests
+from scipy.interpolate import UnivariateSpline
+from dotenv import load_dotenv
+
+# LangChain imports
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.schema import HumanMessage
+
+# Kivy imports
 from kivy.animation import Animation
 from kivy.clock import Clock
+from kivy.core.text import Label as CoreLabel, LabelBase
 from kivy.core.window import Window
-from kivy.core.text import Label as CoreLabel
 from kivy.event import EventDispatcher
 from kivy.garden.graph import SmoothLinePlot
 from kivy.graphics import Color, Ellipse, RoundedRectangle, StencilPop, StencilPush, StencilUnUse, StencilUse
-from kivy.lang.builder import Builder
+from kivy.lang import Builder
 from kivy.logger import Logger
 from kivy.metrics import dp
 from kivy.properties import BooleanProperty, ListProperty, NumericProperty, ObjectProperty, StringProperty
@@ -33,40 +50,27 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.screenmanager import Screen, ScreenManager, NoTransition
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
+
+# KivyMD imports
 from kivymd.app import MDApp
 from kivymd.toast import toast
 from kivymd.uix.behaviors.elevation import CommonElevationBehavior
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDIconButton
-from kivymd.uix.card import MDCard,MDCardSwipe
-from kivymd.uix.gridlayout import MDGridLayout
+from kivymd.uix.card import MDCard, MDCardSwipe
 from kivymd.uix.floatlayout import MDFloatLayout
+from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.list import TwoLineAvatarListItem, TwoLineListItem
 from kivymd.uix.screen import MDScreen
-import threading
-from dotenv import load_dotenv
-from kivy.clock import Clock
-from kivy.core.text import LabelBase
-from kivy.core.window import Window
-from kivy.lang import Builder
-from kivy.properties import StringProperty, NumericProperty
-from kivy.uix.image import Image
-from datetime import datetime
-from kivymd.app import MDApp
-from kivymd.uix.label import MDLabel
-import logging
-from langchain.chat_models import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
-from langchain.schema import HumanMessage
-from mysql.connector import pooling
-from scipy.interpolate import UnivariateSpline
-from exercise_guide import exercise_technique
-import random
+
+# Local imports
 import characters_width_dict
-import bcrypt
-import uuid
-import math
+from exercises import exercises
+from exercise_guide import exercise_technique
+
+# Load environment variables
+load_dotenv()
 
 class LoadingScreen(Screen):
    def __init__(self, **kwargs):
@@ -1654,8 +1658,8 @@ class FoodSearch(Screen):
             getattr(self.ids, f'{name}_text').opacity = opacity
             
     def get_food_data(self, query):
-        app_id = 'a4541f6e'
-        app_key = '06ad20316bcef2b9088b22533fbf840a'
+        app_id = os.getenv("EDAMAM_APP_ID")
+        app_key = os.getenv("EDAMAM_APP_KEY")
         url = f'https://api.edamam.com/api/food-database/v2/parser?app_id={app_id}&app_key={app_key}&ingr={query}&nutrition-type=logging'
 
         response = requests.get(url)
@@ -2691,7 +2695,7 @@ class GeneratePlan(Screen):
 
         # If the user trains three times a week
         elif trainingfrequency== 3:
-            if 'triceps' or 'biceps' in muscles_to_prioritize or experiencelevel=='advanced' or experiencelevel=='elite' or experiencelevel=='intermediate':
+            if any(m in muscles_to_prioritize for m in ['triceps', 'biceps']) or experiencelevel in ['advanced', 'elite', 'intermediate']:
                 plan= split[4]
                 detailed_plan={'day_1': 'biceps, biceps, chest, chest, front delts, side delts', 'day_2': 'triceps, tricpes, upper back, lats, lats, rear delts', 'day_3': 'quads, hamstrings, glutes, quads, glutes, calves, abs'}
             else:
@@ -2700,10 +2704,10 @@ class GeneratePlan(Screen):
 
         # If the user trains four times a week, there are three possible plans, based on the user's experience level and prioritized muscles
         elif trainingfrequency== 4:
-            if 'triceps' or 'biceps' or 'chest' or 'upper back' or 'lats' or 'calves' in muscles_to_prioritize or experiencelevel=='advanced' or experiencelevel=='elite' or experiencelevel=='intermediate':
+            if any(m in muscles_to_prioritize for m in ['triceps', 'biceps', 'chest', 'upper back', 'lats', 'calves']) or experiencelevel in ['advanced', 'elite', 'intermediate']:
                 plan= split[11]
                 detailed_plan={'day_1': 'chest, chest, chest, front delts, side delts', 'day_2': 'upper back, lats, lats, rear delts, abs, abs', 'day_3': 'calves, triceps, biceps, triceps, biceps, forearms', 'day_4': 'quads, hamstrings, glutes, quads, glutes, adductors'}
-            elif 'front delts' or 'side delts' or 'quads' in muscles_to_prioritize:
+            elif any(m in muscles_to_prioritize for m in ['front delts', 'side delts', 'quads']):
                 plan=split[14]
                 detailed_plan={'day_1': 'chest, chest, chest, triceps, triceps, foreamrs, foreamrs', 'day_2': 'side delts, front delts, hamstrings, front delts, hamstrings, side delts'}
             else:
@@ -2712,7 +2716,7 @@ class GeneratePlan(Screen):
        
         # If the user trains five times a week, two possible plans are available, based on the user's experience level and prioritized muscles
         elif trainingfrequency== 5:
-            if 'triceps' or 'biceps' or 'chest' or 'upper back' or 'lats' or 'front delts' or 'side delts' or 'rear delts' in muscles_to_prioritize or gender=='male':
+            if any(m in muscles_to_prioritize for m in ['triceps', 'biceps', 'chest', 'upper back', 'lats', 'front delts', 'side delts', 'rear delts']) or gender=='male':
                 plan= split[3]
                 detailed_plan={'day_1': 'chest, chest, chest, front delts, side delts', 'day_2': 'upper back, lats, lats, abs, abs', 'day_3': 'rear delts, front delts, side delts, rear delts, side delts, front delts', 'day_4': 'triceps, biceps, triceps. biceps, forearms, forearms', 'day_4': 'quads, hamstrings, glutes, quads, glutes, adductors', 'day_5': 'quads, hamstrings, glutes, quads, hamstrings, glutes, calves'}
             else:
@@ -2721,10 +2725,10 @@ class GeneratePlan(Screen):
         
         # If the user trains six times a week, there are three possible plans, based on the user's experience level and prioritized muscles
         elif trainingfrequency== 6:
-            if 'triceps' or 'biceps' in muscles_to_prioritize or experiencelevel=='intermediate':
+            if any(m in muscles_to_prioritize for m in ['triceps', 'biceps']) or experiencelevel=='intermediate':
                 plan= split[12]
                 detailed_plan={'day_1': 'biceps, biceps, chest, chest, front delts, side delts', 'day_2': 'triceps, tricpes, upper back, lats, lats, rear delts', 'day_3': 'quads, hamstrings, glutes, quads, glutes, calves, abs','day_4': 'biceps, biceps, chest, chest, side delts, side delts', 'day_5': 'triceps, tricpes, upper back, upper back, lats, rear delts', 'day_6': 'hamstrings, quads, glutes, quads, glutes, calves, abs'}
-            elif experiencelevel=='beginner' or experiencelevel=='novice' or 'lats' or 'upper back' or 'chest' in muscles_to_prioritize:
+            elif experiencelevel in ['beginner', 'novice'] or any(m in muscles_to_prioritize for m in ['lats', 'upper back', 'chest']):
                 plan = split[13]
                 detailed_plan={'day_1': 'chest, chest, front delts, side delts, triceps, triceps', 'day_2': 'upper back, lats, lats, biceps, biceps', 'day_3': 'quads, hamstrings, glutes, quads, glutes, calves, abs', 'day_4': 'chest, chest, side delts, side delts, triceps, triceps', 'day_5': 'upper back, lats, upper back, biceps, biceps', 'day_6': 'hamstrings, quads, glutes, quads, hamstrings, calves, abs'}
             else:
@@ -3329,7 +3333,7 @@ class ChatBotScreen(Screen):
         # Get the initial response from the chatbot and add it to the chat UI
 
         self.chat = ChatOpenAI(
-            openai_api_key="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",
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
             streaming=False,  
             temperature=0.5
         )
